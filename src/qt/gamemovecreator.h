@@ -12,8 +12,9 @@ struct QueuedMove
 {
     Game::WaypointVector waypoints;
     bool destruct;
+    bool autoDestruct;
 
-    QueuedMove() : destruct(false) { }
+    QueuedMove() : destruct(false), autoDestruct(false) { }
 };
 
 typedef std::map<int, QueuedMove> QueuedPlayerMoves;
