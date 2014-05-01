@@ -363,3 +363,15 @@ std::vector<Game::Coord> PathToCharacterWaypoints(const std::vector<Game::Coord>
         ret.pop_back();
     return ret;
 }
+
+//Returns Queued move as JSON, extracted from managenamespage go button
+//allows for easier move processing
+
+json_spirit::Value QueuedMove::ToJsonValue()
+{
+    using namespace json_spirit;
+    Object obj;
+    
+    
+    return obj;
+}
