@@ -16,20 +16,13 @@ struct QueuedMove
 
     QueuedMove() : destruct(false), autoDestruct(false) { }
     
-    
+    json_spirit::Value ToJsonValue() const;
 };
 
 typedef std::map<int, QueuedMove> QueuedPlayerMoves;
 typedef std::map<Game::PlayerID, QueuedPlayerMoves> QueuedMoves;
 std::vector<Game::Coord> *UpdateQueuedPath(const Game::CharacterState &ch, QueuedMoves &queuedMoves, const Game::CharacterID &chid);
 std::vector<Game::Coord> PathToCharacterWaypoints(const std::vector<Game::Coord> &path);
-
-json_spirit::Value QueuedMove::ToJsonValue()
-{
-    using namespace json_spirit;
-
-    
-}
 
 
 #endif // GAMEMOVECREATOR_H
