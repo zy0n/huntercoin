@@ -372,13 +372,13 @@ json_spirit::Value QueuedMove::ToJsonValue()
     using namespace json_spirit;
     Object obj;
     if (destruct)
-            obj.push_back(Pair("destruct", json_spirit::Value(true)));
+            obj.push_back(Pair("destruct", Value(true)));
     else
         {
             if (waypoints->empty())
                 continue;
 
-            json_spirit::Array arr;
+            Array arr;
             if (waypoints->size() == 1)
             {
                 // Single waypoint (which forces character to stop on the spot) is sent as is.
@@ -394,7 +394,7 @@ json_spirit::Value QueuedMove::ToJsonValue()
                     arr.push_back((*waypoints)[i].x);
                     arr.push_back((*waypoints)[i].y);
                 }
-            obj.push_back(json_spirit::Pair("wp", arr));
+            obj.push_back(Pair("wp", arr));
         }
     return obj;
 }
