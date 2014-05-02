@@ -555,47 +555,11 @@ void ManageNamesPage::on_goButton_clicked()
     BOOST_FOREACH(const PAIRTYPE(int, QueuedMove)& item, qpm)
     {
         // TODO: this can be extracted as a method QueuedMove::ToJsonValue
+        // DONE -zy0n
         json_spirit::Object obj;
-        if (item.second.destruct)
-            obj.push_back(json_spirit::Pair("destruct", json_spirit::Value(true)));
-        else
-        {
-            const std::vector<Game::Coord> *p = NULL;
-            if (mi != gameState.players.end())
-            {
-                std::map<int, Game::CharacterState>::const_iterator mi2 = mi->second.characters.find(item.first);
-                if (mi2 == mi->second.characters.end())
-                    continue;
-                const Game::CharacterState &ch = mi2->second;
-
-                // Caution: UpdateQueuedPath can modify the array queuedMoves that we are iterating over
-                p = UpdateQueuedPath(ch, queuedMoves, Game::CharacterID(strSelectedPlayer, item.first));
-            }
-
-            if (!p || p->empty())
-                p = &item.second.waypoints;
-
-            if (p->empty())
-                continue;
-
-            json_spirit::Array arr;
-            if (p->size() == 1)
-            {
-                // Single waypoint (which forces character to stop on the spot) is sent as is.
-                // It's also possible to send an empty waypoint array for this, but the behavior will differ 
-                // if it goes into the chain some blocks later (will stop on the current tile rather than
-                // the clicked one).
-                arr.push_back((*p)[0].x);
-                arr.push_back((*p)[0].y);
-            }
-            else
-                for (size_t i = 1, n = p->size(); i < n; i++)
-                {
-                    arr.push_back((*p)[i].x);
-                    arr.push_back((*p)[i].y);
-                }
-            obj.push_back(json_spirit::Pair("wp", arr));
-        }
+        
+        obj = item.second.ToJsonValue();
+       
         json.push_back(json_spirit::Pair(strprintf("%d", item.first), obj));
     }
 
