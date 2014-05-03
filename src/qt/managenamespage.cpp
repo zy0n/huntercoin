@@ -822,6 +822,30 @@ void ManageNamesPage::updateGameState(const Game::GameState &gameState)
     gameMapView->updateGameMap(gameState);
     RefreshCharacterList();
     SetPlayerMoveEnabled();
+    
+    //this is where we'd check this mofo out
+    //loop through players in model
+    //get names 
+    for (int i = 0, n = model->rowCount(); i < n; i++)
+    {
+        QModelIndex index = model->index(i, NameTableModel::Name);
+        const QueuedPlayerMoves &pmm = moveMap[index.data(Qt::DisplayRole).toString()];
+        
+        BOOST_FOREACH(const PAIRTYPE(int, QueuedMove)& item, pmm)
+        {
+            json_spirit::Object obj;
+            obj = item.second.ToJsonValue();
+            if(item.second.autoDestruct)
+            {
+                //check to see if enemy is within range
+                //if so send destruct move
+                
+            }
+            
+        }
+    }
+
+    
 }
 
 void ManageNamesPage::chrononAnimChanged(qreal t)
