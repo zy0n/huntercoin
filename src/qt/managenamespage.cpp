@@ -829,17 +829,29 @@ void ManageNamesPage::updateGameState(const Game::GameState &gameState)
     for (int i = 0, n = model->rowCount(); i < n; i++)
     {
         QModelIndex index = model->index(i, NameTableModel::Name);
-        const QueuedPlayerMoves &pmm = moveMap[index.data(Qt::DisplayRole).toString()];
+        std::string name = index.data(Qt::DisplayRole).toString();
+        const QueuedPlayerMoves &pmm = moveMap[name];
         
         BOOST_FOREACH(const PAIRTYPE(int, QueuedMove)& item, pmm)
         {
-            json_spirit::Object obj;
-            obj = item.second.ToJsonValue();
             if(item.second.autoDestruct)
             {
                 //check to see if enemy is within range
                 //if so send destruct move
-                
+                //neeed to get character coord per name.int
+                BOOST_FOREACH(PAIRTYPE(const Game::PlayerID, Game::PlayerState) &p, gameState.players)
+                {
+                    BOOST_FOREACH(PAIRTYPE(const int, Game::CharacterState) &pc, p.second.characters)
+                    {
+                        int i = pc.first;
+                        Game::CharacterState &ch = pc.second;
+            			// if c - coord  > radius
+            			if( abs(ch.coord.x - c.x) > radius ||  abs(ch.coord.y - c.y) > radius )
+            				continue;
+
+                    }
+            
+                }
             }
             
         }
