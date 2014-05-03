@@ -56,6 +56,7 @@ private:
     QString rewardAddr, transferTo;
     bool rewardAddrChanged;
     QueuedMoves queuedMoves;
+    QueuedMoves moveMap;
 
     void RefreshCharacterList();
     void UpdateQueuedMoves();
