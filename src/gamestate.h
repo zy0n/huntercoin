@@ -199,6 +199,11 @@ struct CharacterState
     WaypointVector waypoints;           // Waypoints (stored in reverse so removal of the first waypoint is fast)
     CollectedLootInfo loot;             // Loot collected by player but not banked yet
     unsigned char stay_in_spawn_area;   // Auto-kill players who stay in the spawn area too long
+    
+    bool auto_destruct;                 // Destruct players who come in range of enemy color
+    std::map<int, std::string> commands;// Player defined parameters assigned via chat/msg
+    
+    
 
     CharacterState ()
       : coord(0, 0), dir(0), from(0, 0),
@@ -261,6 +266,7 @@ struct PlayerState
     int message_block;        // Block number. Game visualizer can hide messages that are too old
     std::string address;      // Address for receiving rewards. Empty means receive to the name address
     std::string addressLock;  // "Admin" address for player - reward address field can only be changed, if player is transferred to addressLock
+
 
     IMPLEMENT_SERIALIZE
     (
