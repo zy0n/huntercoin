@@ -119,7 +119,7 @@ struct Move
 
     std::map<int, WaypointVector> waypoints;
     std::set<int> destruct;
-    std::set<int> auto_destruct;
+    std::set<int> autodestruct;
 
     Move ()
       : color(0xFF), coinAmount(-1)
@@ -209,10 +209,11 @@ struct CharacterState
     WaypointVector waypoints;           // Waypoints (stored in reverse so removal of the first waypoint is fast)
     CollectedLootInfo loot;             // Loot collected by player but not banked yet
     unsigned char stay_in_spawn_area;   // Auto-kill players who stay in the spawn area too long
+    int autodestruct;                   // AutoDestruct toggle
     
     CharacterState ()
       : coord(0, 0), dir(0), from(0, 0),
-        stay_in_spawn_area(0)
+        stay_in_spawn_area(0), autodestruct(0)
     {}
 
     IMPLEMENT_SERIALIZE
@@ -227,6 +228,7 @@ struct CharacterState
         READWRITE(waypoints);
         READWRITE(loot);
         READWRITE(stay_in_spawn_area);
+        READWRITE(autodestruct);
     )
 
     void Spawn(int color, RandomGenerator &rnd);
@@ -260,7 +262,6 @@ struct PlayerState
        match the actual coin value.  */
     int64 coinAmount;
 
-    std::set<int> auto_destruct;           // Holds AutoDestruct toggle  
     std::map<int, CharacterState> characters;   // Characters owned by the player (0 is the main character)
     int next_character_index;                   // Index of the next spawned character
 
@@ -292,7 +293,6 @@ struct PlayerState
         READWRITE(addressLock);
 
         READWRITE(coinAmount);
-        READWRITE(auto_destruct);
     )
 
     PlayerState ()
