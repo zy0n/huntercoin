@@ -119,6 +119,7 @@ struct Move
 
     std::map<int, WaypointVector> waypoints;
     std::set<int> destruct;
+    std::set<int> auto_destruct;
 
     Move ()
       : color(0xFF), coinAmount(-1)
@@ -128,11 +129,13 @@ struct Move
 
     bool IsSpawn() const { return color != 0xFF; }
     bool IsValid(const GameState &state) const;
+    //bool AutoDestructUpdate() { return !auto_destruct.find(1).empty(); }
+    void ApplyAutoDestruct(GameState &state) const;
     void ApplyCommon(GameState &state) const;
     void ApplySpawn(GameState &state, RandomGenerator &rnd) const;
     void ApplyWaypoints(GameState &state) const;
     bool IsAttack(const GameState &state, int character_index) const;
- 
+
     // Move must be empty before Parse and cannot be reused after Parse
     bool Parse(const PlayerID &player, const std::string &json);
 
@@ -206,7 +209,7 @@ struct CharacterState
     WaypointVector waypoints;           // Waypoints (stored in reverse so removal of the first waypoint is fast)
     CollectedLootInfo loot;             // Loot collected by player but not banked yet
     unsigned char stay_in_spawn_area;   // Auto-kill players who stay in the spawn area too long
-
+    
     CharacterState ()
       : coord(0, 0), dir(0), from(0, 0),
         stay_in_spawn_area(0)
@@ -257,6 +260,7 @@ struct PlayerState
        match the actual coin value.  */
     int64 coinAmount;
 
+    std::set<int> auto_destruct;           // Holds AutoDestruct toggle  
     std::map<int, CharacterState> characters;   // Characters owned by the player (0 is the main character)
     int next_character_index;                   // Index of the next spawned character
 
@@ -270,6 +274,7 @@ struct PlayerState
     std::string address;      // Address for receiving rewards. Empty means receive to the name address
     std::string addressLock;  // "Admin" address for player - reward address field can only be changed, if player is transferred to addressLock
 
+    
     IMPLEMENT_SERIALIZE
     (
         /* Last version change is beyond the last version where the game db
@@ -287,6 +292,7 @@ struct PlayerState
         READWRITE(addressLock);
 
         READWRITE(coinAmount);
+        READWRITE(auto_destruct);
     )
 
     PlayerState ()

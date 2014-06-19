@@ -136,6 +136,20 @@ bool ParseWaypoints(json_spirit::Object &obj, std::vector<Coord> &result, bool &
     return true;
 }
 
+bool ParseAutoDestruct(json_spirit::Object &obj, bool &result)
+{
+    using namespace json_spirit;
+
+    result = false;
+    Value v;
+    if (!ExtractField(obj, "autodestruct", v))
+        return true;
+    if (v.type() != bool_type)
+        return false;
+    result = v.get_bool();
+    return true;
+}
+
 bool ParseDestruct(json_spirit::Object &obj, bool &result)
 {
     using namespace json_spirit;
@@ -220,6 +234,12 @@ bool Move::Parse(const PlayerID &player, const std::string &json)
         bool bDestruct;
         if (!ParseDestruct(subobj, bDestruct))
             return false;
+        bool aDestruct;
+        if (!ParseAutoDestruct(subobj, aDestruct))
+            return false;
+            
+        if(aDestruct)
+            auto_destruct.insert(i);
 
         if (bDestruct)
         {
@@ -238,10 +258,20 @@ bool Move::Parse(const PlayerID &player, const std::string &json)
     return true;
 }
 
+void Move::ApplyAutoDestruct(GameState &state) const
+{
+    std::map<PlayerID, PlayerState>::iterator mi = state.players.find(player);
+    if (mi == state.players.end())
+        return; 
+    PlayerState &pl = mi->second;
+    BOOST_FOREACH(int &ad, auto_destruct)
+        pl.auto_destruct[ad] = !pl.auto_destruct[ad];
+}
+
 void Move::ApplyCommon(GameState &state) const
 {
     std::map<PlayerID, PlayerState>::iterator mi = state.players.find(player);
-
+    
     if (mi == state.players.end())
     {
         if (message)
@@ -1078,6 +1108,62 @@ std::multimap<Coord, AttackableCharacter> *MapCharactersToTiles(const std::map<P
     return m;
 }
 
+std::multimap<Coord, AttackableCharacter> *MapCharactersInRadius(const PlayerState &player, int charIndex, const std::multimap<Coord, AttackableCharacter> charMap)
+{
+    std::multimap<Coord, AttackableCharacter> *m = new std::multimap<Coord, AttackableCharacter>();
+    int radius = charIndex == 0 ? DESTRUCT_RADIUS_MAIN : DESTRUCT_RADIUS;
+    Coord c = player.characters.find(charIndex)->second.coord;
+    for (int y = c.y - radius; y <= c.y + radius; y++)
+        for (int x = c.x - radius; x <= c.x + radius; x++)
+        {
+            std::pair<std::multimap<Coord, AttackableCharacter>::const_iterator, std::multimap<Coord, AttackableCharacter>::const_iterator> its =
+                                    charactersOnTile->equal_range(Coord(x, y));
+                for (std::multimap<Coord, AttackableCharacter>::const_iterator it = its.first; it != its.second; it++)
+                {
+                    const AttackableCharacter &a = it->second;
+                    AttackableCharacter a;
+                    a.name = &p->first;
+                    a.index = i;
+                    a.color = p->second.color;
+                    m->insert(std::pair<Coord, AttackableCharacter>(ch.coord, a));
+                }
+        }
+    return m;
+}
+// decide wether or not to make part of GameState Struct or not
+void GameState::ApplyDestruct(PlayerState &pl, int charIndex, PlayerState &victim, GameState &outState, StepResult &stepResult)
+{
+    PlayerState& victim = outState.players[*a.name];
+
+    if (a.color == pl.color)
+        return;  // Do not kill same color
+    if (a.index == 0)
+    {
+        const KilledByInfo killer(chid);
+        stepResult.KillPlayer (*a.name, killer);
+    }
+    if (victim.characters.count(a.index))
+    {
+        const CharacterState& ch = victim.characters[a.index];
+        // Drop loot
+        int64 nAmount = ch.loot.nAmount;
+        if (a.index == 0)
+          {
+            assert (victim.coinAmount >= 0);
+            nAmount += victim.coinAmount;
+          }
+        if (nAmount > 0)
+          {
+            // Tax from killing: 4%
+            int64 nTax = nAmount / 25;
+            stepResult.nTaxAmount += nTax;
+            nAmount -= nTax;
+            outState.AddLoot(PushCoordOutOfSpawnArea(ch.coord), nAmount);
+          }
+        victim.characters.erase(a.index);
+    }
+}
+
 bool Game::PerformStep(const GameState &inState, const StepData &stepData, GameState &outState, StepResult &stepResult)
 {
     BOOST_FOREACH(const Move &m, stepData.vMoves)
@@ -1097,7 +1183,33 @@ bool Game::PerformStep(const GameState &inState, const StepData &stepData, GameS
     stepResult = StepResult();
 
     // Apply attacks
-    std::multimap<Coord, AttackableCharacter> *charactersOnTile = NULL;   // Delayed creation - only if at least one attack happened
+    std::multimap<Coord, AttackableCharacter> *charactersOnTile = NULL;  // Delayed creation - only if at least one attack happened
+    std::multimap<Coord, AttackableCharacter> *radialMap = NULL;
+    /*
+        Apply Auto-Destruct before any destruct logic
+    */
+    BOOST_FOREACH(const Move &m, stepData.vMoves)
+    {
+        if(m.auto_destruct.empty())
+            continue;
+        m.ApplyAutoDestruct(outState);
+    }
+    //check newly updated outState for AutoDestruct attacks
+    BOOST_FOREACH(PlayerState &apl, outState.players)
+    {
+        if(apl.auto_destruct.empty())
+            continue;
+        BOOST_FOREACH(int i, apl.auto_destruct)
+        {
+            if (!charactersOnTile)
+                charactersOnTile = MapCharactersToTiles(inState.players);
+            radialMap = MapCharactersInRadius(pl, i, charactersOnTile);
+            if(radialMap.empty())
+                continue;
+            ApplyDestruct(apl, i, a, outState, stepResult);
+        }
+    }
+
     BOOST_FOREACH(const Move &m, stepData.vMoves)
     {
         if (m.destruct.empty())
@@ -1112,6 +1224,14 @@ bool Game::PerformStep(const GameState &inState, const StepData &stepData, GameS
                 continue;
             if (!charactersOnTile)
                 charactersOnTile = MapCharactersToTiles(inState.players);
+
+            radialMap = MapCharactersInRadius(pl, i, charactersOnTile);
+            
+            BOOST_FOREACH(const AttackableCharacter &a, radialMap)
+            {
+                ApplyDestruct(pl, i, a, outState, stepResult);
+            }
+            /*
             int radius = i == 0 ? DESTRUCT_RADIUS_MAIN : DESTRUCT_RADIUS;
             Coord c = pl.characters.find(i)->second.coord;
             for (int y = c.y - radius; y <= c.y + radius; y++)
@@ -1153,7 +1273,8 @@ bool Game::PerformStep(const GameState &inState, const StepData &stepData, GameS
                         }
                     }
                 }
-            if (outState.players[m.player].characters.count(i))
+            */
+            if (outState.players[m.player].characters.count(i)) // player destructs without killing other players
             {
                 CharacterState &ch = outState.players[m.player].characters[i];
                 // Drop loot
@@ -1173,7 +1294,7 @@ bool Game::PerformStep(const GameState &inState, const StepData &stepData, GameS
                   }
                 outState.players[m.player].characters.erase(i);
             }
-            if (i == 0)
+            if (i == 0)     //general has destruct 
             {
                 const KilledByInfo killer(CharacterID(m.player, i));
                 stepResult.KillPlayer (m.player, killer);
@@ -1182,7 +1303,8 @@ bool Game::PerformStep(const GameState &inState, const StepData &stepData, GameS
     }
 
     delete charactersOnTile;
-
+    delete radialMap;
+    
     // Kill players who stay too long in the spawn area
     BOOST_FOREACH(PAIRTYPE(const PlayerID, PlayerState) &p, outState.players)
     {
