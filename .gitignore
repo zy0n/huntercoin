@@ -3,7 +3,12 @@ src/*.exe
 *.*~*
 src/chronokingsd
 Makefile
+makefile
 build
-huntercoin-qt
+release
 qrc_*.cpp
 src/huntercoind
+*.Debug
+*.Release
+*.dll
+*.bak
