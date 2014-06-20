@@ -15,10 +15,29 @@ struct QueuedMove
     bool destruct;
 
     QueuedMove() : destruct(false) { }
+	json_spirit::Value ToJsonValue() const;
 };
 
+enum MacroType
+{
+	NONE,
+	AutoDestruct,
+	AutoBank
+	//ROOM FOR MORE COMMANDS LATER
+};
+
+struct PlayerMacro
+{
+	MacroType macro;
+	int charindex;
+	PlayerMacro() : macro(0), charindex(0);
+};
+
+typedef std::map<int, PlayerMacro> QueuedPlayerMacros;
+typedef std::map<Game::PlayerID, QueuedPlayerMacros> PlayerMacros;
 typedef std::map<int, QueuedMove> QueuedPlayerMoves;
 typedef std::map<Game::PlayerID, QueuedPlayerMoves> QueuedMoves;
+
 std::vector<Game::Coord> *UpdateQueuedPath(const Game::CharacterState &ch, QueuedMoves &queuedMoves, const Game::CharacterID &chid);
 std::vector<Game::Coord> PathToCharacterWaypoints(const std::vector<Game::Coord> &path);
 

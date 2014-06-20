@@ -56,9 +56,11 @@ private:
     QString rewardAddr, transferTo;
     bool rewardAddrChanged;
     QueuedMoves queuedMoves;
+	PlayerMacros playerMacros;
 
     void RefreshCharacterList();
     void UpdateQueuedMoves();
+    void SendMoves(std::string playerName);
     void SetPlayerEnabled(bool enable);
     void SetPlayerMoveEnabled(bool enable = true);
 

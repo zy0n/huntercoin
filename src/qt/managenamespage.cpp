@@ -36,11 +36,14 @@ class CharacterTableModel : public QAbstractTableModel
     Game::CharacterID crownHolder;
     std::vector<int> alive;
     const QueuedPlayerMoves &queuedMoves;
+	const QueuedPlayerMacros &playerMacros;
+	
+	
     bool pending;      // Global flag if player transaction state is pending
 
 public:
-    CharacterTableModel(const Game::PlayerID &player_, const Game::PlayerState &state_, const QueuedPlayerMoves &queuedMoves_, Game::CharacterID crownHolder_)
-        : player(player_), state(state_), queuedMoves(queuedMoves_), crownHolder(crownHolder_), pending(false)
+    CharacterTableModel(const Game::PlayerID &player_, const Game::PlayerState &state_, const QueuedPlayerMoves &queuedMoves_, const QueuedPlayerMacros &playerMacros_, Game::CharacterID crownHolder_)
+        : player(player_), state(state_), queuedMoves(queuedMoves_), playerMacros(playerMacros_), crownHolder(crownHolder_), pending(false)
     {
         BOOST_FOREACH(const PAIRTYPE(int, Game::CharacterState) &pc, state.characters)
             alive.push_back(pc.first);
@@ -537,87 +540,54 @@ void ManageNamesPage::on_destructButton_clicked()
                   QMessageBox::Ok);
             continue;
         }
-
-        queuedMoves[chid.player][chid.index].destruct = true;
+        //check to see if macros have been assigned for player
+        PlayerMacro &p = playerMacros[chid.player][chid.index].macro;
+        bool &destruct = queuedMoves[chid.player][chid.index].destruct;
+		//pressing destruct twice will enable autoDestruct for character
+        // ternary logic explanation 
+        // if destruct is true, check if destruct and autodestruct are set for character reset autodestruct
+        // if destruct is false set macro to none
+        /*
+            if(destruct)
+            {
+                if(destruct && (p == MacroType::AutoDestruct))
+                    p = MacroType::NONE;
+                else 
+                    p = MacroType::AutoDestruct;
+            }
+            else
+                p = MacroType::NONE;
+        */
+        
+        p = destruct ? ((destruct && (p == MacroType::AutoDestruct)) ? MacroType::NONE : MacroType::AutoDestruct) : MacroType::NONE;
+        
+        destruct = !destruct;
     }    
 
     UpdateQueuedMoves();
 }
 
-void ManageNamesPage::on_goButton_clicked()
+void ManageNamesPage::SendMoves(std::string playerName)
 {
-    if (selectedPlayer.isEmpty())
-        return;
-
     if (!walletModel)
         return;
-
     json_spirit::Object json;
 
     QString msg = ui->messageEdit->text();
-    if (!msg.isEmpty())
-        json.push_back(json_spirit::Pair("msg", msg.toStdString()));
-
+        if (!msg.isEmpty())
+            json.push_back(json_spirit::Pair("msg", msg.toStdString()));
     // Make sure the game state is up-to-date (otherwise it's only polled every 250 ms)
     model->updateGameState();
 
-    std::map<Game::PlayerID, Game::PlayerState>::const_iterator it = gameState.players.find(selectedPlayer.toStdString());
+    std::map<Game::PlayerID, Game::PlayerState>::const_iterator it = gameState.players.find(playerName);
     if (it == gameState.players.end() || rewardAddr.toStdString() != it->second.address)
         json.push_back(json_spirit::Pair("address", rewardAddr.toStdString()));
 
-    std::string strSelectedPlayer = selectedPlayer.toStdString();
-    
-    std::map<Game::PlayerID, Game::PlayerState>::const_iterator mi = gameState.players.find(strSelectedPlayer);
-
-    const QueuedPlayerMoves &qpm = queuedMoves[strSelectedPlayer];
+    const QueuedPlayerMoves &qpm = queuedMoves[playerName];
 
     BOOST_FOREACH(const PAIRTYPE(int, QueuedMove)& item, qpm)
-    {
-        // TODO: this can be extracted as a method QueuedMove::ToJsonValue
-        json_spirit::Object obj;
-        if (item.second.destruct)
-            obj.push_back(json_spirit::Pair("destruct", json_spirit::Value(true)));
-        else
-        {
-            const std::vector<Game::Coord> *p = NULL;
-            if (mi != gameState.players.end())
-            {
-                std::map<int, Game::CharacterState>::const_iterator mi2 = mi->second.characters.find(item.first);
-                if (mi2 == mi->second.characters.end())
-                    continue;
-                const Game::CharacterState &ch = mi2->second;
-
-                // Caution: UpdateQueuedPath can modify the array queuedMoves that we are iterating over
-                p = UpdateQueuedPath(ch, queuedMoves, Game::CharacterID(strSelectedPlayer, item.first));
-            }
-
-            if (!p || p->empty())
-                p = &item.second.waypoints;
-
-            if (p->empty())
-                continue;
-
-            json_spirit::Array arr;
-            if (p->size() == 1)
-            {
-                // Single waypoint (which forces character to stop on the spot) is sent as is.
-                // It's also possible to send an empty waypoint array for this, but the behavior will differ 
-                // if it goes into the chain some blocks later (will stop on the current tile rather than
-                // the clicked one).
-                arr.push_back((*p)[0].x);
-                arr.push_back((*p)[0].y);
-            }
-            else
-                for (size_t i = 1, n = p->size(); i < n; i++)
-                {
-                    arr.push_back((*p)[i].x);
-                    arr.push_back((*p)[i].y);
-                }
-            obj.push_back(json_spirit::Pair("wp", arr));
-        }
-        json.push_back(json_spirit::Pair(strprintf("%d", item.first), obj));
-    }
-
+        json.push_back(json_spirit::Pair(strprintf("%d", item.first), item.second.ToJsonValue()));
+    
     std::string data = json_spirit::write_string(json_spirit::Value(json), false);
 
     QString err_msg;
@@ -651,6 +621,16 @@ void ManageNamesPage::on_goButton_clicked()
     UpdateQueuedMoves();
     SetPlayerMoveEnabled(false);
     rewardAddrChanged = false;
+}
+
+void ManageNamesPage::on_goButton_clicked()
+{
+    if (selectedPlayer.isEmpty())
+        return;
+
+    if (!walletModel)
+        return;     
+    SendMoves(selectedPlayer.toStdString());
 }
 
 void ManageNamesPage::on_cancelButton_clicked()
@@ -731,7 +711,7 @@ void ManageNamesPage::RefreshCharacterList()
     if (it != gameState.players.end())
     {
         // Note: pointer to queuedMoves is saved and must stay valid while the character table is visible
-        characterTableModel = new CharacterTableModel(it->first, it->second, queuedMoves[it->first], gameState.crownHolder);
+        characterTableModel = new CharacterTableModel(it->first, it->second, queuedMoves[it->first], playerMacros[it->first], gameState.crownHolder);
     }
     else
         characterTableModel = NULL;
@@ -879,6 +859,39 @@ void ManageNamesPage::updateGameState(const Game::GameState &gameState)
     gameMapView->updateGameMap(gameState);
     RefreshCharacterList();
     SetPlayerMoveEnabled();
+	
+	if(playerMacros.empty())
+		return;
+	BOOST_FOREACH(PAIRTYPE(Game::PlayerID, QueuedPlayerMacros) &pm, playerMacros)
+	{
+		if(pm.second.empty())
+			continue;
+        BOOST_FOREACH(PAIRTYPE(int, PlayerMacro) &m, pm)
+		{
+            Game::CharacterState &ch = gameState.players.find(pm.first)->second.characters[m.first];
+			switch(m.second)
+			{
+				case MacroType::AutoDestruct:
+                    BOOST_FOREACH(PAIRTYPE(Game::PlayerID, Game::PlayerState)  &pl, gameState.players)
+                        BOOST_FOREACH(PAIRTYPE(int, Game::CharacterState) &pch, pl.second.characters)
+                        {
+                            if ( abs(ch.coord.x - pch.second.coord.x) > radius ||  abs(ch.coord.y - pch.second.coord.y) > radius )
+                                continue;
+                            queuedMoves[pl.first][m.first].destruct = true;
+                            UpdateQueuedMoves();
+                            playerMacros[pl.first].erase(m.first);
+                            SendMoves(pl.first);
+                        }
+					break;
+				case MacroType::AutoBank:
+					//unused for now
+					break;
+				default:
+					return;
+			}
+		}
+	}
+
 }
 
 void ManageNamesPage::chrononAnimChanged(qreal t)
