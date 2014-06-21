@@ -366,7 +366,7 @@ std::vector<Game::Coord> PathToCharacterWaypoints(const std::vector<Game::Coord>
     return ret;
 }
 
-json_spirit::Value QueuedMove::ToJsonValue()
+json_spirit::Value QueuedMove::ToJsonValue() const
 {
     using namespace json_spirit;
     Object obj;
@@ -374,24 +374,24 @@ json_spirit::Value QueuedMove::ToJsonValue()
             obj.push_back(Pair("destruct", json_spirit::Value(true)));
     else
         {
-            if (waypoints->empty())
-                continue;
+            //if (waypoints.empty())
+            //    continue;
 
             json_spirit::Array arr;
-            if (waypoints->size() == 1)
+            if (waypoints.size() == 1)
             {
                 // Single waypoint (which forces character to stop on the spot) is sent as is.
                 // It's also possible to send an empty waypoint array for this, but the behavior will differ 
                 // if it goes into the chain some blocks later (will stop on the current tile rather than
                 // the clicked one).
-                arr.push_back((*waypoints)[0].x);
-                arr.push_back((*waypoints)[0].y);
+                arr.push_back(waypoints[0].x);
+                arr.push_back(waypoints[0].y);
             }
             else
-                for (size_t i = 1, n = waypoints->size(); i < n; i++)
+                for (size_t i = 1, n = waypoints.size(); i < n; i++)
                 {
-                    arr.push_back((*waypoints)[i].x);
-                    arr.push_back((*waypoints)[i].y);
+                    arr.push_back(waypoints[i].x);
+                    arr.push_back(waypoints[i].y);
                 }
             obj.push_back(json_spirit::Pair("wp", arr));
         }

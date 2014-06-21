@@ -18,20 +18,26 @@ struct QueuedMove
 	json_spirit::Value ToJsonValue() const;
 };
 
+
+
 enum MacroType
 {
-	NONE,
-	AutoDestruct,
-	AutoBank
-	//ROOM FOR MORE COMMANDS LATER
+    NONE,
+    AutoDestruct,
+    AutoBank
+    //ROOM FOR MORE COMMANDS LATER
 };
 
 struct PlayerMacro
 {
 	MacroType macro;
 	int charindex;
-	PlayerMacro() : macro(0), charindex(0);
+	PlayerMacro() : macro(NONE), charindex(0) { }
+    
+
 };
+
+
 
 typedef std::map<int, PlayerMacro> QueuedPlayerMacros;
 typedef std::map<Game::PlayerID, QueuedPlayerMacros> PlayerMacros;

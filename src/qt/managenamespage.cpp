@@ -95,6 +95,8 @@ public:
         {
             const int i = alive[index.row()];
             QueuedPlayerMoves::const_iterator mi;
+            QueuedPlayerMacros::const_iterator mac;
+            
             std::map<int, Game::CharacterState>::const_iterator mi2;
             switch (index.column())
             {
@@ -123,6 +125,12 @@ public:
                     if (pending)
                         return tr("Pending");
                     mi = queuedMoves.find(i);
+                    mac = playerMacros.find(i);
+                    if(mac != playerMacros.end())
+                    {
+                        if(mac->second.macro == AutoDestruct)
+                            return tr("AutoDestruct");
+                    }
                     if (mi != queuedMoves.end())
                     {
                         if (mi->second.destruct)
@@ -541,27 +549,55 @@ void ManageNamesPage::on_destructButton_clicked()
             continue;
         }
         //check to see if macros have been assigned for player
-        PlayerMacro &p = playerMacros[chid.player][chid.index].macro;
+        MacroType &p = playerMacros[chid.player][chid.index].macro;
         bool &destruct = queuedMoves[chid.player][chid.index].destruct;
 		//pressing destruct twice will enable autoDestruct for character
-        // ternary logic explanation 
-        // if destruct is true, check if destruct and autodestruct are set for character reset autodestruct
-        // if destruct is false set macro to none
-        /*
-            if(destruct)
+        
+        if (destruct)
+        {
+            if (p == NONE)
             {
-                if(destruct && (p == MacroType::AutoDestruct))
-                    p = MacroType::NONE;
-                else 
-                    p = MacroType::AutoDestruct;
+                p = AutoDestruct;
+                destruct = false;
+            }
+            else if (p == AutoDestruct)
+            {
+                p = NONE;
+                destruct = false;
+            }
+        }
+        else if (p == AutoDestruct)
+        {
+            p = NONE;
+            destruct = false;
+        }
+        else
+            destruct = true;
+    /*
+        if(destruct)
+        {
+            if(destruct && (p == AutoDestruct))
+            {
+                p = NONE;
+                destruct = false;
+            }
+            else 
+            {
+                p = AutoDestruct;
+                destruct = false;
+            }  
+        }
+        else
+        {
+            if(p == AutoDestruct)
+            {
+                p = NONE;
+                destruct = false;
             }
             else
-                p = MacroType::NONE;
+                destruct = true;
+        }
         */
-        
-        p = destruct ? ((destruct && (p == MacroType::AutoDestruct)) ? MacroType::NONE : MacroType::AutoDestruct) : MacroType::NONE;
-        
-        destruct = !destruct;
     }    
 
     UpdateQueuedMoves();
@@ -616,7 +652,7 @@ void ManageNamesPage::SendMoves(std::string playerName)
     ui->messageEdit->setText(QString());
     transferTo = QString();
 
-    queuedMoves[strSelectedPlayer].clear();
+    queuedMoves[playerName].clear();
 
     UpdateQueuedMoves();
     SetPlayerMoveEnabled(false);
@@ -645,6 +681,7 @@ void ManageNamesPage::on_cancelButton_clicked()
             continue;
 
         queuedMoves[chid.player].erase(chid.index);
+        playerMacros[chid.player].erase(chid.index);
     }
 
     UpdateQueuedMoves();
@@ -859,38 +896,39 @@ void ManageNamesPage::updateGameState(const Game::GameState &gameState)
     gameMapView->updateGameMap(gameState);
     RefreshCharacterList();
     SetPlayerMoveEnabled();
-	
+	/*
 	if(playerMacros.empty())
 		return;
-	BOOST_FOREACH(PAIRTYPE(Game::PlayerID, QueuedPlayerMacros) &pm, playerMacros)
+	BOOST_FOREACH(PAIRTYPE(const Game::PlayerID, QueuedPlayerMacros) &pm, playerMacros)
 	{
 		if(pm.second.empty())
 			continue;
         BOOST_FOREACH(PAIRTYPE(int, PlayerMacro) &m, pm)
 		{
             Game::CharacterState &ch = gameState.players.find(pm.first)->second.characters[m.first];
-			switch(m.second)
+			switch(m.second.macro)
 			{
-				case MacroType::AutoDestruct:
-                    BOOST_FOREACH(PAIRTYPE(Game::PlayerID, Game::PlayerState)  &pl, gameState.players)
-                        BOOST_FOREACH(PAIRTYPE(int, Game::CharacterState) &pch, pl.second.characters)
-                        {
-                            if ( abs(ch.coord.x - pch.second.coord.x) > radius ||  abs(ch.coord.y - pch.second.coord.y) > radius )
-                                continue;
-                            queuedMoves[pl.first][m.first].destruct = true;
-                            UpdateQueuedMoves();
-                            playerMacros[pl.first].erase(m.first);
-                            SendMoves(pl.first);
-                        }
+				case AutoDestruct:
+                    BOOST_FOREACH(const PAIRTYPE(const Game::PlayerID, Game::PlayerState)  &pl, gameState.players)
+                    BOOST_FOREACH(PAIRTYPE(const int, Game::CharacterState) pch, pl.second.characters)
+                    {
+                        if ( abs(ch.coord.x - pch.second.coord.x) > 1 ||  abs(ch.coord.y - pch.second.coord.y) > 1 )
+                            continue;
+                        queuedMoves[pl.first][m.first].destruct = true;
+                        UpdateQueuedMoves();
+                        playerMacros[pl.first].erase(m.first);
+                        SendMoves(pl.first);
+                    }
 					break;
-				case MacroType::AutoBank:
+				//case AutoBank:
 					//unused for now
-					break;
+				//	break;
 				default:
 					return;
 			}
 		}
 	}
+    */
 
 }
 
