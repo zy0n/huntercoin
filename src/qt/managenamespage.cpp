@@ -863,6 +863,50 @@ void ManageNamesPage::updateGameState(const Game::GameState &gameState)
     gameMapView->updateGameMap(gameState);
     RefreshCharacterList();
     SetPlayerMoveEnabled();
+   
+    bool sendMoves = false;
+   
+    BOOST_FOREACH(PAIRTYPE(const Game::PlayerID, QueuedPlayerMacros) &p, playerMacros)
+    {
+        const Game::PlayerState &pl = gameState.players.find(p.first)->second;
+        BOOST_FOREACH(PAIRTYPE(const int, PlayerMacro) &m, p.second)
+        {
+            const Game::CharacterState &ch = pl.characters.find(m.first)->second;
+            int radius = (m.first == 0) ? Game::DESTRUCT_RADIUS_MAIN : Game::DESTRUCT_RADIUS;
+            
+            switch(playerMacros[p.first][m.first].macro)
+            {
+                case AutoDestruct:
+                    BOOST_FOREACH(const PAIRTYPE(const Game::PlayerID, Game::PlayerState) &v, gameState.players)
+                    {
+                        if(v.first == p.first || v.second.color == pl.color)  //dont search against yourself silly
+                            continue;
+                        BOOST_FOREACH(const PAIRTYPE(int, Game::CharacterState) vc, v.second.characters)
+                        {
+                            if( abs(ch.coord.x - vc.second.coord.x) > radius ||  abs(ch.coord.y - vc.second.coord.y) > radius )
+            				    continue;
+                            queuedMoves[p.first][m.first].destruct = true;
+                            playerMacros[p.first].erase(m.first);
+                            sendMoves = true;
+                            break;
+                        }
+                        if(sendMoves)
+                            break;
+                    }
+                    break;
+                case AutoBank:
+                default:
+                    break;
+            }
+        }
+        if(sendMoves)
+        {
+            SendMoves(p.first);
+            sendMoves = false;
+        }
+    }
+    
+    
 	/*
 	if(playerMacros.empty())
 		return;

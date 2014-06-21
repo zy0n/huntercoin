@@ -31,10 +31,8 @@ enum MacroType
 struct PlayerMacro
 {
 	MacroType macro;
-	int charindex;
-	PlayerMacro() : macro(NONE), charindex(0) { }
-    
-
+	int index;
+	PlayerMacro() : macro(NONE), index(0) { }
 };
 
 
