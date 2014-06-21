@@ -548,56 +548,23 @@ void ManageNamesPage::on_destructButton_clicked()
                   QMessageBox::Ok);
             continue;
         }
-        //check to see if macros have been assigned for player
+
         MacroType &p = playerMacros[chid.player][chid.index].macro;
         bool &destruct = queuedMoves[chid.player][chid.index].destruct;
-		//pressing destruct twice will enable autoDestruct for character
+        //Destruct Presses : (1) Destruct, (2)AutoDestruct, (3)Reset
         
         if (destruct)
         {
-            if (p == NONE)
-            {
-                p = AutoDestruct;
-                destruct = false;
-            }
-            else if (p == AutoDestruct)
-            {
-                p = NONE;
-                destruct = false;
-            }
+            p = AutoDestruct;
+            queuedMoves[chid.player].erase(chid.index);
         }
         else if (p == AutoDestruct)
         {
-            p = NONE;
-            destruct = false;
+            queuedMoves[chid.player].erase(chid.index);
+            playerMacros[chid.player].erase(chid.index);
         }
         else
             destruct = true;
-    /*
-        if(destruct)
-        {
-            if(destruct && (p == AutoDestruct))
-            {
-                p = NONE;
-                destruct = false;
-            }
-            else 
-            {
-                p = AutoDestruct;
-                destruct = false;
-            }  
-        }
-        else
-        {
-            if(p == AutoDestruct)
-            {
-                p = NONE;
-                destruct = false;
-            }
-            else
-                destruct = true;
-        }
-        */
     }    
 
     UpdateQueuedMoves();
