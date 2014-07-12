@@ -15,6 +15,7 @@
 #include "configurenamedialog2.h"
 #include "gamemapview.h"
 #include "gamechatview.h"
+#include "botutil.h"
 
 #include <QMessageBox>
 #include <QScrollBar>
@@ -411,6 +412,13 @@ ManageNamesPage::ManageNamesPage(QWidget *parent) :
     connect(chrononAnim, SIGNAL(finished()), SLOT(chrononAnimFinished()));
 
     onSelectName(QString());
+    
+    /**
+     *  BEGIN  *  INIT BOTSYSTEM
+     **/
+    botSystem = new BotController();
+    initBotNames();
+
 }
 
 ManageNamesPage::~ManageNamesPage()
@@ -879,6 +887,9 @@ void ManageNamesPage::updateGameState(const Game::GameState &gameState)
     gameMapView->updateGameMap(gameState);
     RefreshCharacterList();
     SetPlayerMoveEnabled();
+    
+    //trigger botsystem here
+    botSystem.GameStateUpdated(gameState);  //uses botcontroller to update bots
 }
 
 void ManageNamesPage::chrononAnimChanged(qreal t)
@@ -991,4 +1002,76 @@ void ManageNamesPage::exportClicked()
         QMessageBox::critical(this, tr("Error exporting"), tr("Could not write to file %1.").arg(filename),
                               QMessageBox::Abort, QMessageBox::Abort);
     }
+}
+
+int ManageNamesPage::getBotStatus(std::string playerName) 
+{
+	// return 0 = ready to go
+	// return 1 = DNE
+	// return 2 = Pending
+	for (int j = 0; j < tabsNames->count(); j++) 
+    {
+		std::string tabName = tabsNames->tabText(j).toStdString();
+		if (tabName == playerName) 
+        {
+			if (!model->index(j, NameTableModel::Status).data(Qt::CheckStateRole).toBool()) 
+            {
+				return 2;
+			}
+			return 0;
+		}
+	}
+	return 1;
+}
+
+void ManageNamesPage::initBotNames()
+{
+    for (int i = 0, n = model->rowCount(); i < n; i++)
+    {
+        QModelIndex index = model->index(i, NameTableModel::Name);
+        botSystem.initBot( index.data(Qt::DisplayRole).toString() );
+    }
+    
+}
+
+void ManageNamesPage::removePendingTx(QString txString)
+{
+    QString retMsg;
+    walletModel->DeleteTransaction(QString::fromStdString(pendingPlayers[bot.name]),retMsg);
+    
+}
+
+bool ManageNamesPage::SpawnBot(std::string playerName, int color) 
+{
+	if (walletModel->nameAvailable(QString::fromStdString(playerName))) 
+    {
+		try 
+        {
+			WalletModel::NameNewReturn res = walletModel->nameNew(QString::fromStdString(playerName));
+			if (res.ok)  
+            {
+				int newRowIndex;
+				model->updateEntry(QString::fromStdString(playerName), "", res.address, NameTableEntry::NAME_NEW, CT_NEW, &newRowIndex);
+				json_spirit::Object obj;
+				obj.push_back(json_spirit::Pair("color",color));
+				json_spirit::Value val(obj);
+				walletModel->nameFirstUpdatePrepare(QString::fromStdString(playerName), json_spirit::write_string(val, false), false);
+				LOCK(cs_main);
+				if (mapMyNameFirstUpdate.count(vchFromString(playerName)) != 0) 
+                {
+					model->updateEntry(QString::fromStdString(playerName), json_spirit::write_string(val, false), res.address, NameTableEntry::NAME_NEW, CT_UPDATED);
+					return true;
+				} 
+                else return false;
+			}
+		} 
+        catch (std::exception& e)	
+        {
+			return false;
+		}
+	} 
+    else 
+    {
+		return false;
+	}
 }

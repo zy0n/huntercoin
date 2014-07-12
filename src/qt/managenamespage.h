@@ -3,6 +3,7 @@
 
 #include "../gamestate.h"
 #include "../gamemovecreator.h"
+#include "botutil.h"
 
 #include <QWidget>
 
@@ -48,6 +49,10 @@ private:
     QTimeLine *chrononAnim;  // Flash block number when a new block arrives
 
     class CharacterTableModel *characterTableModel;
+    
+    //class BotSystem *botSystem;
+    BotController *botSystem;
+    
 
     QString selectedPlayer;
     QStringList selectedCharacters;
