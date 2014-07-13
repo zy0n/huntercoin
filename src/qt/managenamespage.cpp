@@ -1043,35 +1043,35 @@ void ManageNamesPage::removePendingTx(QString txString)
 
 bool ManageNamesPage::SpawnBot(std::string playerName, int color) 
 {
-	if (walletModel->nameAvailable(QString::fromStdString(playerName))) 
+    if (walletModel->nameAvailable(QString::fromStdString(playerName))) 
     {
-		try 
+        try 
         {
-			WalletModel::NameNewReturn res = walletModel->nameNew(QString::fromStdString(playerName));
-			if (res.ok)  
+            WalletModel::NameNewReturn res = walletModel->nameNew(QString::fromStdString(playerName));
+            if (res.ok)  
             {
-				int newRowIndex;
-				model->updateEntry(QString::fromStdString(playerName), "", res.address, NameTableEntry::NAME_NEW, CT_NEW, &newRowIndex);
-				json_spirit::Object obj;
-				obj.push_back(json_spirit::Pair("color",color));
-				json_spirit::Value val(obj);
-				walletModel->nameFirstUpdatePrepare(QString::fromStdString(playerName), json_spirit::write_string(val, false), false);
-				LOCK(cs_main);
-				if (mapMyNameFirstUpdate.count(vchFromString(playerName)) != 0) 
+                int newRowIndex;
+                model->updateEntry(QString::fromStdString(playerName), "", res.address, NameTableEntry::NAME_NEW, CT_NEW, &newRowIndex);
+                json_spirit::Object obj;
+                obj.push_back(json_spirit::Pair("color",color));
+                json_spirit::Value val(obj);
+                walletModel->nameFirstUpdatePrepare(QString::fromStdString(playerName), json_spirit::write_string(val, false), false);
+                LOCK(cs_main);
+                if (mapMyNameFirstUpdate.count(vchFromString(playerName)) != 0) 
                 {
-					model->updateEntry(QString::fromStdString(playerName), json_spirit::write_string(val, false), res.address, NameTableEntry::NAME_NEW, CT_UPDATED);
-					return true;
-				} 
+                    model->updateEntry(QString::fromStdString(playerName), json_spirit::write_string(val, false), res.address, NameTableEntry::NAME_NEW, CT_UPDATED);
+                    return true;
+                } 
                 else return false;
-			}
-		} 
+            }
+        } 
         catch (std::exception& e)	
         {
-			return false;
-		}
-	} 
+            return false;
+        }
+    } 
     else 
     {
-		return false;
-	}
+        return false;
+    }
 }
