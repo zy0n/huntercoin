@@ -66,27 +66,58 @@ void BotController::UpdatePending()
     pendingBots = pendingTemp;
 }
 
+void BotController::UpdateTargets(const Game::GameState &state)
+{
+    //remove old targets from targetque
+    
+    BOOST_FOREACH(PAIRTYPE(std::string, TargetMap) &qmap, queuedTargets)
+    {
+        BOOST_FOREACH(PAIRTYPE(int, BotTarget) &targ, qmap.second)
+        {
+            if(!targ->second.remove)
+                continue;
+            targ->second.erase(targ->first);
+        }
+    }
+    
+    //add new targets based on new coins/other factors
+    
+}
+
 void BotController::GameStateUpdated(const Game::GameState &state)
 {
     UpdateBots(state);
     UpdatePending();
-    
-    /*
-        Update Targets
-            clean up target array via destroy on nextblock system
-            so players that have targets that are no longer targets can get new targets
-    */
+    UpdateTargets(state);
 
-    BOOST_FOREACH(PAIRTYPE(std::string, BotTarget) &targ,openTargets) 
-    {
-        if(!targ->second.remove)
-            continue;
-        openTargets.erase(targ->first);
-    }
 
     BOOST_FOREACH(BotPlayer &bot, bots)
     {
         //bot.UpdatePlayer(state);
+        
+        /*
+         * NEEED TO UPDATE THIS BECAUSE I CHANGED THE MAP
+         * QUEUEDTARGETS-><NAME,<INT,TARGET>>
+         * 
+         * 
+         * BUG TEST
+         * CHECK TO SEE IF ABLE TO SEND MOVES FOR OTHER PLAYERS
+         * THAT YOU DONT OWN
+         * COULD BE USEFUL FOR SERVICEBOT
+         * SOMEONE SENDS COMMAND 
+         * 
+         *  
+         *  * /HELP?
+         *  * /SEARCH <NAME> RETURNS LOCATION OF PLAYER
+         *  * /WHERESCROWN
+         *  * /GAMES
+         *  * BETTING /DICE AND SUCH
+         *  * /DICEBOT
+         *  * /SETBOUNTY <NAME> SETS BOUNTY ON PLAYER
+         *  * /BOUNTIES RETURNS BOUNTY LIST
+         *  * 
+         * 
+         */
         if(bot.status == BotStatus.DEAD)
         {
             BOOST_FOREACH(PAIRTYPE(std::string, BotTarget) &targ, openTargets)   //removes targets for dead players
@@ -188,58 +219,6 @@ void BotController::GameStateUpdated(const Game::GameState &state)
         
     }
 
-
-    
-    for (BotNet::iterator bot = bots.begin() ; bot != bots.end(); ++bot)
-    {
-        //unsure where to update player
-        //bot.UpdatePlayer(state.players.find(bot.name)->second);
-        //use this switch in bot.Think() logic for determining which moves to send
-        switch(bot.type)
-        {
-            case BotType.BOMBER:
-                /*
-                    teams of 2 hunters
-                    goes to target
-                    explodes one hunter, other returns to base
-                    recycles into queue of solo hunters
-                */
-                break;
-            case BotType.DEFEND:
-                /*
-                    Teams of bots will radially defend <location> or <bot>
-                    bots determine incoming targets
-                    predict incoming target eta
-                    intercept & destruct
-                */
-                break;
-            case BotType.GATHER:
-                /*
-                    Teams of bots will gather coins within a radius of <location>
-                    locate coins that nobody else can reach faster than you
-                    
-                */
-                break;
-            case BotType.HUNTER:
-                /*
-                    These bots do nothing but kill
-                    Teams of 2 or more hunters
-                    search out valuable targets
-                    intercept & kill
-                */
-                break;
-                
-            default: break;
-        }            
-    }
-    
-    
-    
-    
-    
-    
-    
-    
 }
 
 

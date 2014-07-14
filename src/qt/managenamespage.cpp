@@ -1097,6 +1097,7 @@ bool ManageNamesPage::SendMoves(BotSystem::BotPlayer &bot)
         printf("Name update error for player %s: %s\n\tMove: %s\n", qPrintable(QString::fromStdString(bot.name)), qPrintable(err_msg), data.c_str());
         return false;
     }
+    bot.active = false; //TODO: needs to set that the bot is currently working on task
     bot.transferTo = QString();
     bot.moves.clear();
     queuedMoves[bot.name].clear();

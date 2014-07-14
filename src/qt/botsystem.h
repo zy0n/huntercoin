@@ -5,7 +5,7 @@
 
 typedef std::vector<BotPlayer> BotNet;
 typedef std::map<int, BotTarget> TargetMap;
-typedef std::map<std::string, BotTarget> TargetQueue;
+typedef std::map<std::string, TargetMap> TargetQueue;
 typedef std::map<std::string, std::string> PendingMap;
 
 struct BotController
@@ -103,6 +103,43 @@ struct BotPlayer
          * assigns player with moves in the move array
          * moves[character.index]
         */
+       
+        switch(bot.type)
+        {
+            case BotType.BOMBER:
+            /*
+                teams of 2 hunters
+                goes to target
+                explodes one hunter, other returns to base
+                recycles into queue of solo hunters
+             */
+            break;
+            case BotType.DEFEND:
+            /*
+                Teams of bots will radially defend <location> or <bot>
+                bots determine incoming targets
+                predict incoming target eta
+                intercept & destruct
+             */
+            break;
+            case BotType.GATHER:
+            /*
+                Teams of bots will gather coins within a radius of <location>
+                locate coins that nobody else can reach faster than you
+                
+             */
+            break;
+            case BotType.HUNTER:
+            /*
+                These bots do nothing but kill
+                Teams of 2 or more hunters
+                search out valuable targets
+                intercept & kill
+             */
+            break;
+            
+            default: break;
+        }
        
         if(active)
         {   
