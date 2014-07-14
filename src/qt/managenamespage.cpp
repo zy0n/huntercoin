@@ -1038,7 +1038,6 @@ void ManageNamesPage::removePendingTx(QString txString)
 {
     QString retMsg;
     walletModel->DeleteTransaction(QString::fromStdString(pendingPlayers[bot.name]),retMsg);
-    
 }
 
 bool ManageNamesPage::SpawnBot(std::string playerName, int color) 
@@ -1074,4 +1073,35 @@ bool ManageNamesPage::SpawnBot(std::string playerName, int color)
     {
         return false;
     }
+}
+
+bool ManageNamesPage::SendMoves(BotSystem::BotPlayer &bot)
+{
+    std::string data = bot.GetMoveString();
+    QString err_msg;
+    try
+    {
+        WalletModel::UnlockContext ctx(walletModel->requestUnlock());
+        if(!ctx.isValid())
+            return false;
+        err_msg = walletModel->nameUpdate(QString::fromStdString(bot.name), data, QString::fromStdString(bot.transferTo));
+    }
+    catch (std::exception& e)
+    {
+        err_msg = e.what();
+    }
+    if(!err_msg.isEmpty())
+    {
+        if (err_msg == "ABORTED")
+            return false;
+        printf("Name update error for player %s: %s\n\tMove: %s\n", qPrintable(QString::fromStdString(bot.name)), qPrintable(err_msg), data.c_str());
+        return false;
+    }
+    bot.transferTo = QString();
+    bot.moves.clear();
+    queuedMoves[bot.name].clear();
+    UpdateQueuedMoves();
+    SetPlayerMoveEnabled(false);
+    rewardAddrChanged = false;
+    return true;
 }

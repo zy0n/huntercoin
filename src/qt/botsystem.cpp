@@ -33,19 +33,17 @@
 
 void BotController::RemoveTarget(int index)
 {
-    botTargets.erase(index);
+    openTargets.erase(index);
 }
 
 void BotController::UpdateBots(const Game::GameState &state)
 {
     BOOST_FOREACH(BotPlayer &bot, bots)
-    //for (BotPlayer &bot : bots)
-    //for (BotNet::iterator bot = bots.begin() ; bot != bots.end(); ++bot)
     {
-        //Game::PlayerStateMap::iterator pl = state.players.find(bot.name);
-        //bot.player = pl->second;
-        //bot.player = state.players.find(bot.name)->second;
         bot.UpdatePlayer(state);
+        //when updating bot check to see if bot is still 'owned' by this client
+        //bot name can be 'stolen' in game when death happens
+        //status will be BotStatus::DEAD but player will be found in gamestate
     }
 }
 
@@ -78,44 +76,24 @@ void BotController::GameStateUpdated(const Game::GameState &state)
             clean up target array via destroy on nextblock system
             so players that have targets that are no longer targets can get new targets
     */
-    //use iterator?
-    //for (std::map<int, BotTarget>::iterator targ = botTargets.begin() ; targ != botTargets.end(); ++targ)
-    BOOST_FOREACH(PAIRTYPE(std::string, BotTarget) &targ, botTargets) 
+
+    BOOST_FOREACH(PAIRTYPE(std::string, BotTarget) &targ,openTargets) 
     {
         if(!targ->second.remove)
             continue;
-        botTargets.erase(targ->first);
+        openTargets.erase(targ->first);
     }
 
-     /*  
-            loop through bots
-        x        -check status
-                    dead 
-        x           pending - do nothing
-                    if pending for 20 blocks remove tx
-        x       -check if bot has targets/is moving
-                    check if targets are still valid
-        x       -check if bot is dead
-                    attempt player spawn
-        x        -check if name is hijacked
-                -calculate bot moves
-                    check loot
-                    if max reached send home
-                    find targets
-                    
-    */
-    //
-    
     BOOST_FOREACH(BotPlayer &bot, bots)
     {
         //bot.UpdatePlayer(state);
         if(bot.status == BotStatus.DEAD)
         {
-            BOOST_FOREACH(PAIRTYPE(std::string, BotTarget) &targ, botTargets)   //removes targets for dead players
+            BOOST_FOREACH(PAIRTYPE(std::string, BotTarget) &targ, openTargets)   //removes targets for dead players
             {
                 if(bot.name != targ->second.owner)
                     continue;
-                botTargets.erase(targ->first);
+                openTargets.erase(targ->first);
             }
             
         }
@@ -131,9 +109,7 @@ void BotController::GameStateUpdated(const Game::GameState &state)
             continue;
         }
         
-        Game::PlayerStateMap::const_iterator mi = gameState.players.find(bot.name);
-        
-        if(mi == gameState.players.end())
+        if(!bot.alive)
         {
             //player in nametab but not in gamestate
             if(bot.status == BotStatus.PENDING)
@@ -143,37 +119,26 @@ void BotController::GameStateUpdated(const Game::GameState &state)
             else
             {
                 //check balance against minimum
-                //
-                //ManageNamesPage::SpawnBot(bot.name, bot.player.color);
                 bot.SpawnBot();
                 
             }
-            continue;
+            continue;  
         }
         
-        //determine if botname is still owned by us
-        /*
-            bool onTab = false;
-            for (int j = 0; j < tabsNames->count(); j++) {
-                if (tabsNames->tabText(j).toStdString() == bot.name) {
-                    onTab = true;
-                    break;
-                }
-            }
-            if (!onTab) {
-                if (botConfig.debug == 1) printf("!!!!! SOMEBODY ELSE USING NAME\n");
-                continue;
-            }
-        
-        */
-        
+        bot.Think(openTargets);     
+        //assigns bot a task based on needs of botnet
+        //calculates moves if needed,  player/coin/heart targets, offensive/defensive moves
+
+        if(!bot.active)     //has no new moves to send || bot isn't owned/needed by this BotNet
+            continue;
+            
+            
         //handle move limit reached
-        
-        
-        //calculate botmoves store in botMoves map
-        //  see if need to send moves for player
+        ManageNamesPage::SendMove(bot);
+
+        /*       
         bool sendMove = false;
-        BOOST_FOREACH(const PAIRTYPE(int, Game::CharacterState) &charState, mi->second.characters)
+        BOOST_FOREACH(const PAIRTYPE(int, Game::CharacterState) &charState, bot.player.characters)
         {
             if(botMoves.find(charState.first) != botMoves.end())
             {
@@ -219,15 +184,17 @@ void BotController::GameStateUpdated(const Game::GameState &state)
             //send moves for player to network
             //increment movecounter
         }
+        */
+        
     }
-    
+
 
     
     for (BotNet::iterator bot = bots.begin() ; bot != bots.end(); ++bot)
     {
         //unsure where to update player
         //bot.UpdatePlayer(state.players.find(bot.name)->second);
-        
+        //use this switch in bot.Think() logic for determining which moves to send
         switch(bot.type)
         {
             case BotType.BOMBER:
