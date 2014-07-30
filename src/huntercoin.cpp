@@ -78,12 +78,11 @@ public:
     virtual void AddToWallet(CWalletTx& tx);
     virtual bool CheckTransaction(const CTransaction& tx);
     virtual bool ConnectInputs(DatabaseSet& dbset,
-            map<uint256, CTxIndex>& mapTestPool,
+            const std::map<uint256, CTxIndex>& mapTestPool,
             const CTransaction& tx,
-            vector<CTransaction>& vTxPrev,
-            vector<CTxIndex>& vTxindex,
-            CBlockIndex* pindexBlock,
-            CDiskTxPos& txPos,
+            const std::vector<CUtxoEntry>& vTxoPrev,
+            const CBlockIndex* pindexBlock,
+            const CDiskTxPos& txPos,
             bool fBlock,
             bool fMiner);
     virtual bool DisconnectInputs (DatabaseSet& dbset,
@@ -280,16 +279,10 @@ int GetTxPosHeight(const CDiskTxPos& txPos)
     map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(block.GetHash());
     if (mi == mapBlockIndex.end())
         return 0;
-    CBlockIndex* pindex = (*mi).second;
+    const CBlockIndex* pindex = (*mi).second;
     if (!pindex || !pindex->IsInMainChain())
         return 0;
     return pindex->nHeight;
-}
-
-int GetTxPosHeight2(const CDiskTxPos& txPos, int nHeight)
-{
-    nHeight = GetTxPosHeight(txPos);
-    return nHeight;
 }
 
 bool
@@ -673,49 +666,105 @@ Value name_list(const Array& params, bool fHelp)
     std::map<vchType, int> vNamesI;
     std::map<vchType, Object> vNamesO;
 
+    /* For determining the tx height by the txindex, one has to load the
+       block header from disk.  To prevent this, we look up the name index
+       and use that instead.  Cache the name index lookups for better
+       performance.  */
+    std::map<vchType, std::vector<CNameIndex> > nameIndexCache;
+
+    /* Collect some info for performance optimisation.  We store the total
+       number of transactions processed (which were name tx) and the
+       number that needed to be loaded from disk (its txindex) since
+       they couldn't be short-cut.  */
+    unsigned totalTx = 0;
+    unsigned loadedTx = 0;
+
+    CRITICAL_BLOCK(cs_main)
     CRITICAL_BLOCK(pwalletMain->cs_mapWallet)
       {
         CTxDB txdb("r");
+        CNameDB namedb("r");
 
         BOOST_FOREACH(PAIRTYPE(const uint256, CWalletTx)& item,
                       pwalletMain->mapWallet)
           {
             const CWalletTx& tx = item.second;
 
-            // ignore spent tx
-            if (!tx.vfSpent.empty ())
-              {
-                for (int i = 0; i < tx.vfSpent.size (); ++i)
-                  if (!tx.IsSpent (i))
-                    goto notAllSpent;
-
-                continue;
-              }
-notAllSpent:
-
-            if (tx.nVersion != NAMECOIN_TX_VERSION)
+            vchType vchName, vchValue;
+            int nOut;
+            if (!tx.GetNameUpdate (nOut, vchName, vchValue))
               continue;
 
-            // name
-            vchType vchName;
-            if (!GetNameOfTx (tx, vchName))
-              continue;
+            ++totalTx;
+
             if (!vchNameUniq.empty () && vchNameUniq != vchName)
               continue;
 
-            // value
-            vchType vchValue;
-            if (!GetValueOfNameTx (tx, vchValue))
-              continue;
+            /* The expensive part of this routine is loading the
+               tx index from disk later on.  To improve the situation
+               especially for wallets with loads of name_update operations
+               (typical for Huntercoin), we bail out early if the name
+               output of the transaction is already spent (since then,
+               a follow-up transaction will occur later anyway).
 
-            // height
+               Note that the vfSpent array we check here (for a wallet
+               transaction) only tracks outpoints owned by the wallet user.
+               Thus it is also no problem if someone else spends the output
+               after transferring a name to them, even though in that case
+               *no* follow-up wtx will appear in the loop.
+
+               The only thing to watch out for is if we just did a name_update
+               and have a pending transaction in the wallet.  In that case,
+               the output will already be marked as spent in the wallet, but
+               we won't get a later entry (since it fails the txindex lookup
+               later on as an unconfirmed transaction).  Thus never apply
+               this shortcut to names which appear in mapNamePending.  */
+
+            if (nOut < tx.vfSpent.size ()
+                && mapNamePending.count (vchName) == 0
+                && tx.IsSpent (nOut))
+              continue;
+            
+            ++loadedTx;
+
+            /* Load tx index for disk position and spent-type array.  */
             CTxIndex txindex;
             if (!txdb.ReadTxIndex (tx.GetHash (), txindex))
               continue;
-            const int nHeight = GetTxPosHeight(txindex.pos);
+
+            /* Find the name's name index object to get the height.  */
+            if (nameIndexCache.count (vchName) == 0)
+              {
+                std::vector<CNameIndex> data;
+                if (!namedb.ReadName (vchName, data))
+                  {
+                    error ("name_list: ReadName failed");
+                    continue;
+                  }
+                nameIndexCache[vchName] = data;
+              }
+            const std::vector<CNameIndex> vNmIndex = nameIndexCache[vchName];
+            int nHeight = -1;
+            for (std::vector<CNameIndex>::const_iterator i = vNmIndex.begin ();
+                 i != vNmIndex.end (); ++i)
+              if (i->txPos == txindex.pos)
+                {
+                  nHeight = i->nHeight;
+                  break;
+                }
+            if (nHeight == -1)
+              {
+                error ("name_list: txpos not found in name index");
+                continue;
+              }
+
+            // get last active name only
+            if (vNamesI.find (vchName) != vNamesI.end ()
+                && vNamesI[vchName] > nHeight)
+              continue;
 
             Object oName;
-            std::string sName = stringFromVch(vchName);
+            const std::string sName = stringFromVch(vchName);
             oName.push_back(Pair("name", sName));
             oName.push_back(Pair("value", stringFromVch(vchValue)));
             if (!hooks->IsMine (tx))
@@ -723,11 +772,6 @@ notAllSpent:
             std::string strAddress;
             GetNameAddress(tx, strAddress);
             oName.push_back(Pair("address", strAddress));
-
-            // get last active name only
-            if (vNamesI.find (vchName) != vNamesI.end ()
-                && vNamesI[vchName] > nHeight)
-              continue;
 
             if (IsPlayerDead (tx, txindex))
               oName.push_back (Pair("dead", 1));
@@ -739,6 +783,8 @@ notAllSpent:
 
     BOOST_FOREACH(const PAIRTYPE(vchType, Object)& item, vNamesO)
       oRes.push_back(item.second);
+
+    printf ("name_list: total %u name tx, loaded %u.\n", totalTx, loadedTx);
 
     return oRes;
 }
@@ -2385,14 +2431,6 @@ void CHuntercoinHooks::RemoveFromMemoryPool(const CTransaction& tx)
     }
 }
 
-int CheckTransactionAtRelativeDepth(CBlockIndex* pindexBlock, CTxIndex& txindex, int maxDepth)
-{
-    for (CBlockIndex* pindex = pindexBlock; pindex && pindexBlock->nHeight - pindex->nHeight < maxDepth; pindex = pindex->pprev)
-        if (pindex->nBlockPos == txindex.pos.nBlockPos && pindex->nFile == txindex.pos.nBlockFile)
-            return pindexBlock->nHeight - pindex->nHeight;
-    return -1;
-}
-
 bool GetNameOfTx(const CTransaction& tx, vector<unsigned char>& name)
 {
     if (tx.nVersion != NAMECOIN_TX_VERSION)
@@ -2457,9 +2495,10 @@ IsPlayerDead (const CWalletTx &nameTx, const CTxIndex &txindex)
 }
 
 static bool
-ConnectInputsGameTx (DatabaseSet& dbset, map<uint256, CTxIndex>& mapTestPool,
-                     const CTransaction& tx, CBlockIndex* pindexBlock,
-                     CDiskTxPos& txPos)
+ConnectInputsGameTx (DatabaseSet& dbset,
+                     const std::map<uint256, CTxIndex>& mapTestPool,
+                     const CTransaction& tx, const CBlockIndex* pindexBlock,
+                     const CDiskTxPos& txPos)
 {
     if (!tx.IsGameTx())
         return error("ConnectInputsGameTx called for non-game tx");
@@ -2523,11 +2562,11 @@ DisconnectInputsGameTx (DatabaseSet& dbset, const CTransaction& tx,
 
 bool
 CHuntercoinHooks::ConnectInputs (DatabaseSet& dbset,
-                                 map<uint256, CTxIndex>& mapTestPool,
+                                 const std::map<uint256, CTxIndex>& mapTestPool,
                                  const CTransaction& tx,
-                                 vector<CTransaction>& vTxPrev,
-                                 vector<CTxIndex>& vTxindex,
-                                 CBlockIndex* pindexBlock, CDiskTxPos& txPos,
+                                 const std::vector<CUtxoEntry>& vTxoPrev,
+                                 const CBlockIndex* pindexBlock,
+                                 const CDiskTxPos& txPos,
                                  bool fBlock, bool fMiner)
 {
     if (tx.IsGameTx ())
@@ -2541,21 +2580,22 @@ CHuntercoinHooks::ConnectInputs (DatabaseSet& dbset,
     /* For game transactions, the vectors of previous transactions
        are not filled.  Check that they are filled properly if we have
        a non-game transaction.  */
-    assert (vTxPrev.size () == tx.vin.size ()
-            && vTxindex.size () == tx.vin.size ());
+    assert (vTxoPrev.size () == tx.vin.size ());
 
     int nInput;
     bool found = false;
 
-    int prevOp;
+    int prevHeight, prevOp;
     int64 prevCoinAmount = -1;
-    vector<vchType> vvchPrevArgs;
+    std::vector<vchType> vvchPrevArgs;
 
     for (int i = 0 ; i < tx.vin.size(); i++)
     {
-        const CTxOut& out = vTxPrev[i].vout[tx.vin[i].prevout.n];
-        vector<vchType> vvchPrevArgsRead;
-        if (DecodeNameScript(out.scriptPubKey, prevOp, vvchPrevArgsRead))
+        const CTxOut& out = vTxoPrev[i].txo;
+
+        int op;
+        std::vector<vchType> vvchPrevArgsRead;
+        if (DecodeNameScript(out.scriptPubKey, op, vvchPrevArgsRead))
         {
             if (found)
                 return error("ConnectInputHook() : multiple previous name transactions");
@@ -2563,6 +2603,8 @@ CHuntercoinHooks::ConnectInputs (DatabaseSet& dbset,
             nInput = i;
             vvchPrevArgs = vvchPrevArgsRead;
             prevCoinAmount = out.nValue;
+            prevHeight = vTxoPrev[i].height;
+            prevOp = op;
         }
     }
 
@@ -2575,15 +2617,19 @@ CHuntercoinHooks::ConnectInputs (DatabaseSet& dbset,
         return true;
     }
 
-    vector<vector<unsigned char> > vvchArgs;
-    int op;
-    int nOut;
-
+    std::vector<vchType> vvchArgs;
+    int op, nOut;
     if (!DecodeNameTx(tx, op, nOut, vvchArgs))
         return error("ConnectInputsHook() : could not decode a name tx");
 
-    int nPrevHeight;
-    int nDepth;
+    /* Get depth of previous tx.  This is only meaningful if the
+       prev tx is a name operation, otherwise prevHeight is still
+       set to -1.  */
+    const int nDepth = pindexBlock->nHeight - prevHeight;
+    if (found && nDepth < 0)
+      return error ("ConnectInputHook: depth negative"
+                    " (block %d, prev %d, depth %d)",
+                    pindexBlock->nHeight, prevHeight, nDepth);
     int64 nNetFee;
 
     switch (op)
@@ -2594,6 +2640,7 @@ CHuntercoinHooks::ConnectInputs (DatabaseSet& dbset,
             if (tx.vout[nOut].nValue < NAMENEW_COIN_AMOUNT)
                 return error("ConnectInputsHook() : name_new tx: insufficient amount");
             break;
+
         case OP_NAME_FIRSTUPDATE:
             nNetFee = GetNameNetFee(tx);
             if (nNetFee < GetNetworkFee(pindexBlock->nHeight))
@@ -2603,10 +2650,10 @@ CHuntercoinHooks::ConnectInputs (DatabaseSet& dbset,
 
             {
                 // Check hash
-                const vector<unsigned char> &vchHash = vvchPrevArgs[0];
-                const vector<unsigned char> &vchName = vvchArgs[0];
-                const vector<unsigned char> &vchRand = vvchArgs[1];
-                vector<unsigned char> vchToHash(vchRand);
+                const vchType& vchHash = vvchPrevArgs[0];
+                const vchType& vchName = vvchArgs[0];
+                const vchType& vchRand = vvchArgs[1];
+                vchType vchToHash(vchRand);
                 vchToHash.insert(vchToHash.end(), vchName.begin(), vchName.end());
                 uint160 hash = Hash160(vchToHash);
                 if (uint160(vchHash) != hash)
@@ -2618,21 +2665,16 @@ CHuntercoinHooks::ConnectInputs (DatabaseSet& dbset,
                               " insufficient amount of the locked coin");
             if (!NameAvailable (dbset, vvchArgs[0]))
                 return error("ConnectInputsHook() : name_firstupdate on an existing name");
-            nDepth = CheckTransactionAtRelativeDepth(pindexBlock, vTxindex[nInput], MIN_FIRSTUPDATE_DEPTH);
-            // Do not accept if in chain and not mature
-            if ((fBlock || fMiner) && nDepth >= 0 && nDepth < MIN_FIRSTUPDATE_DEPTH)
+
+            /* Do not accept if name_new is not mature.  */
+            if ((fBlock || fMiner) && nDepth < MIN_FIRSTUPDATE_DEPTH)
                 return false;
 
-            // Do not mine if previous name_new is not visible.  This is if
-            // name_new expired or not yet in a block
+            /* Check that no other pending txs on this name are already
+               in the block to be mined.  */
             if (fMiner)
             {
-                // TODO CPU intensive
-                nDepth = CheckTransactionAtRelativeDepth(pindexBlock, vTxindex[nInput], INT_MAX);
-                if (nDepth == -1)
-                    return error("ConnectInputsHook() : name_firstupdate cannot be mined if name_new is not already in chain and unexpired");
-                // Check that no other pending txs on this name are already in the block to be mined
-                set<uint256>& setPending = mapNamePending[vvchArgs[0]];
+                const set<uint256>& setPending = mapNamePending[vvchArgs[0]];
                 BOOST_FOREACH(const PAIRTYPE(uint256, CTxIndex)& s, mapTestPool)
                 {
                     if (setPending.count(s.first))
@@ -2645,6 +2687,7 @@ CHuntercoinHooks::ConnectInputs (DatabaseSet& dbset,
                 }
             }
             break;
+
         case OP_NAME_UPDATE:
             if (!found || (prevOp != OP_NAME_FIRSTUPDATE && prevOp != OP_NAME_UPDATE))
                 return error("name_update tx without previous update tx");
@@ -2654,13 +2697,17 @@ CHuntercoinHooks::ConnectInputs (DatabaseSet& dbset,
             if (vvchPrevArgs[0] != vvchArgs[0])
                 return error("ConnectInputsHook() : name_update name mismatch");
 
-            // TODO CPU intensive
-            nDepth = CheckTransactionAtRelativeDepth(pindexBlock, vTxindex[nInput], INT_MAX);
-            if ((fBlock || fMiner) && nDepth < 0)
-                return error("ConnectInputsHook() : name_update on an expired name, or there is a pending transaction on the name");
+            /* Prevent update of a name twice in a single block.  */
+            if ((fBlock || fMiner) && nDepth == 0)
+              return error ("ConnectInputsHook: multiple name_update operations"
+                            " on the same name");
+
+            /* Check amount of locked coin.  */
             if (tx.vout[nOut].nValue != prevCoinAmount)
-                return error("ConnectInputsHook() : name_update tx: incorrect amount of the locked coin");
+              return error ("ConnectInputsHook: name_update tx:"
+                            " incorrect amount of the locked coin");
             break;
+
         default:
             return error("ConnectInputsHook() : name transaction has unknown op");
     }
@@ -2688,7 +2735,8 @@ CHuntercoinHooks::ConnectInputs (DatabaseSet& dbset,
 
             CRITICAL_BLOCK(cs_main)
             {
-                std::map<std::vector<unsigned char>, std::set<uint256> >::iterator mi = mapNamePending.find(vvchArgs[0]);
+                std::map<vchType, std::set<uint256> >::iterator mi;
+                mi = mapNamePending.find (vvchArgs[0]);
                 if (mi != mapNamePending.end())
                     mi->second.erase(tx.GetHash());
             }
@@ -2865,20 +2913,28 @@ CHuntercoinHooks::ConnectBlock (CBlock& block, DatabaseSet& dbset,
         CRITICAL_BLOCK(cs_AppendBlockFile)
         {
             char pchMessageVGameTx[8] = { 'v', 'g', 'a', 'm', 'e', 't', 'x', ':' };
-            unsigned int nSize = GetSerializeSize(block.vgametx, SER_DISK) + sizeof(pchMessageVGameTx);
+            unsigned nSize = GetSerializeSize (block.vgametx, SER_DISK);
+            nSize += sizeof (pchMessageVGameTx);
 
-            if (!CheckDiskSpace(sizeof(pchMessageStart) + sizeof(nSize) + nSize))
-                return error("ConnectBlock hook : out of disk space when writing game transactions");
+            unsigned nTotalSize = sizeof (pchMessageStart);
+            nTotalSize += sizeof (nSize) + nSize;
 
-            CAutoFile fileout = AppendBlockFile(block.nGameTxFile);
+            CAutoFile fileout = AppendBlockFile (dbset, block.nGameTxFile,
+                                                 nTotalSize);
             if (!fileout)
                 return error("ConnectBlock hook : AppendBlockFile failed");
+            const unsigned startPos = ftell (fileout);
             fileout << FLATDATA(pchMessageStart) << nSize << FLATDATA(pchMessageVGameTx);
 
             block.nGameTxPos = ftell(fileout);
             if (block.nGameTxPos == -1)
                 return error("ConnectBlock hook : ftell failed");
             fileout << block.vgametx;
+
+            // Check that the total size estimate was correct.
+            if (ftell (fileout) - startPos != nTotalSize)
+              return error ("ConnectBlock hook: nTotalSize was wrong");
+
             FlushBlockFile(fileout);
         }
 
